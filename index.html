@@ -428,7 +428,7 @@ function seeded(seed){ let s=seed>>>0; return ()=>{ s=(s+0x6D2B79F5)|0; let t=Ma
 function shuffle(arr,seed){ const r=seeded(seed); const a=arr.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(r()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 const ORDER = shuffle(WORDS.filter(w=>w.lv===4).map(w=>w.id),20261106).concat(shuffle(WORDS.filter(w=>w.lv===5).map(w=>w.id),20261107));
 const TOTAL = ORDER.length;
-const DAILY_NEW = 100, DAILY_REVIEW = Infinity, EXTRA_REVIEW = 50; // 복습은 상한 없이 그날 대기 전부
+const DAILY_NEW = 100, DAILY_REVIEW = 100, EXTRA_REVIEW = 50; // 복습 하루 100개: 틀린 적 있는 단어 먼저, 나머지는 랜덤
 const INTERVALS = [1,3,7,14,30,60]; // days until next review by stage; past last stage = 완료
 const KEY = 'hsk_vocab_v1';
 
@@ -476,22 +476,30 @@ function dueIds(){
     .sort((a,b)=>{ const ca=S.cards[a],cb=S.cards[b]; if(ca.due!==cb.due) return ca.due<cb.due?-1:1; if(ca.stage!==cb.stage) return ca.stage-cb.stage; return ORDER.indexOf(+a)-ORDER.indexOf(+b); })
     .map(Number);
 }
+function shuffle(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } return arr; }
+// 오늘 복습할 단어 고르기: 대기 중인 단어 가운데 틀린 적 있는 단어 먼저(많이 틀린 순), 나머지는 랜덤
+function pickReview(n, exclude){
+  const ex=exclude||new Set(); const due=dueIds().filter(id=>!ex.has(String(id)));
+  const wrong=due.filter(id=>S.wrong[id]).sort((a,b)=>(S.wrong[b].count-S.wrong[a].count)||(S.cards[a].due<S.cards[b].due?-1:1));
+  const rest=shuffle(due.filter(id=>!S.wrong[id]));
+  return wrong.concat(rest).slice(0,n);
+}
 function ensureRevQueue(){
-  const t=today();
-  if(S.revQueue.date!==t){
-    S.revQueue={date:t, ids:dueIds().slice(0,DAILY_REVIEW), pos:0, flipped:false};
+  const t=today(); const q=S.revQueue;
+  if(q.date!==t){
+    S.revQueue={date:t, ids:pickReview(DAILY_REVIEW), pos:0, flipped:false, v:2};
     save();
-  } else {
-    // 오늘 큐에 아직 안 들어간 대기 단어가 있으면 뒤에 이어 붙임 (예전 150개 상한으로 만든 큐 포함)
-    const inQ=new Set(S.revQueue.ids.map(String)); const more=dueIds().filter(id=>!inQ.has(String(id)));
-    if(more.length){ S.revQueue.ids=S.revQueue.ids.concat(more); save(); }
+  } else if(q.v!==2){
+    // 예전 방식으로 만든 오늘 큐: 이미 푼 것은 그대로 두고 나머지를 새 방식으로 채움 (총 100개)
+    const done=q.ids.slice(0,q.pos); const need=Math.max(0,DAILY_REVIEW-done.length);
+    q.ids=done.concat(pickReview(need,new Set(done.map(String)))); q.v=2; save();
   }
 }
 let revMode='daily'; let WQ={ids:[],pos:0,flipped:false,known:0,wrong:0};
 function curQ(){ return revMode==='wrong' ? WQ : S.revQueue; }
 function extendReview(){
   ensureRevQueue(); const q=S.revQueue; const inQ=new Set(q.ids);
-  const more=dueIds().filter(id=>!inQ.has(id)).slice(0,EXTRA_REVIEW);
+  const more=pickReview(EXTRA_REVIEW,new Set([...inQ].map(String)));
   if(!more.length){ toast('더 복습할 단어가 없어요'); return; }
   q.ids=q.ids.concat(more); q.flipped=false; save(); renderReview(); toast(`${more.length}개 추가했어요`);
 }
