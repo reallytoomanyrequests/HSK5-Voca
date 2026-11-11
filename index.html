@@ -428,7 +428,7 @@ function seeded(seed){ let s=seed>>>0; return ()=>{ s=(s+0x6D2B79F5)|0; let t=Ma
 function shuffle(arr,seed){ const r=seeded(seed); const a=arr.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(r()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 const ORDER = shuffle(WORDS.filter(w=>w.lv===4).map(w=>w.id),20261106).concat(shuffle(WORDS.filter(w=>w.lv===5).map(w=>w.id),20261107));
 const TOTAL = ORDER.length;
-const DAILY_NEW = 100, DAILY_REVIEW = 150, EXTRA_REVIEW = 50;
+const DAILY_NEW = 100, DAILY_REVIEW = Infinity, EXTRA_REVIEW = 50; // 복습은 상한 없이 그날 대기 전부
 const INTERVALS = [1,3,7,14,30,60]; // days until next review by stage; past last stage = 완료
 const KEY = 'hsk_vocab_v1';
 
@@ -481,6 +481,10 @@ function ensureRevQueue(){
   if(S.revQueue.date!==t){
     S.revQueue={date:t, ids:dueIds().slice(0,DAILY_REVIEW), pos:0, flipped:false};
     save();
+  } else {
+    // 오늘 큐에 아직 안 들어간 대기 단어가 있으면 뒤에 이어 붙임 (예전 150개 상한으로 만든 큐 포함)
+    const inQ=new Set(S.revQueue.ids.map(String)); const more=dueIds().filter(id=>!inQ.has(String(id)));
+    if(more.length){ S.revQueue.ids=S.revQueue.ids.concat(more); save(); }
   }
 }
 let revMode='daily'; let WQ={ids:[],pos:0,flipped:false,known:0,wrong:0};
